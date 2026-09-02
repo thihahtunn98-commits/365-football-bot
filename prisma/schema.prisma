@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum NewsCategory { BREAKING TRANSFER MATCH INJURY CLUB }
+enum ProcessingStatus { PENDING APPROVED REJECTED PUBLISHED FAILED }
+enum TelegramPostType { NEWS MANUAL LIVE_MATCH PRE_MATCH GOAL_ALERT HALF_TIME FULL_TIME }
+enum ManualPostStatus { DRAFT SCHEDULED PUBLISHED CANCELLED }
+enum MatchStatus { SCHEDULED LIVE HALF_TIME FINISHED POSTPONED CANCELLED }
+
+model NewsSource {
+  id                String   @id @default(cuid()) @map("id")
+  name              String
+  rssUrl            String?  @unique @map("rss_url")
+  websiteUrl        String?  @map("website_url")
+  isActive          Boolean  @default(true) @map("is_active")
+  pollIntervalMins  Int      @default(10) @map("poll_interval_mins")
+  lastPolledAt      DateTime? @map("last_polled_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  articles          ScrapedArticle[]
+  @@map("news_sources")
+}
+
+model ScrapedArticle {
+  id            String   @id @default(cuid())
+  sourceId      String   @map("source_id")
+  externalId    String?  @map("external_id")
+  url           String   @unique
+  headline      String
+  summary       String?
+  featuredImage String?  @map("featured_image")
+  publishedAt   DateTime? @map("published_at")
+  contentHash   String   @unique @map("content_hash")
+  rawPayload    Json?    @map("raw_payload")
+  createdAt     DateTime @default(now()) @map("created_at")
+  source        NewsSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  processedNews ProcessedNews?
+  @@index([sourceId, publishedAt])
+  @@unique([sourceId, externalId])
+  @@map("scraped_articles")
+}
+
+model ProcessedNews {
+  id              String           @id @default(cuid())
+  articleId       String           @unique @map("article_id")
+  burmeseHeadline String?          @map("burmese_headline")
+  burmeseContent  String?          @map("burmese_content")
+  category        NewsCategory?
+  status          ProcessingStatus @default(PENDING)
+  sourceAttribution String?        @map("source_attribution")
+  approvedAt      DateTime?        @map("approved_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  article         ScrapedArticle   @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  telegramPosts   TelegramPost[]
+  @@map("processed_news")
+}
+
+model TelegramPost {
+  id                String           @id @default(cuid())
+  processedNewsId   String?          @map("processed_news_id")
+  manualPostId      String?          @map("manual_post_id")
+  matchId           String?          @map("match_id")
+  telegramMessageId String           @unique @map("telegram_message_id")
+  channelId         String           @map("channel_id")
+  postType          TelegramPostType @map("post_type")
+  publishedAt       DateTime         @default(now()) @map("published_at")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  processedNews     ProcessedNews?   @relation(fields: [processedNewsId], references: [id])
+  manualPost        ManualPost?      @relation(fields: [manualPostId], references: [id])
+  match             Match?           @relation(fields: [matchId], references: [id])
+  @@unique([processedNewsId, channelId])
+  @@map("telegram_posts")
+}
+
+model ManualPost {
+  id          String           @id @default(cuid())
+  content     String
+  imageUrl    String?          @map("image_url")
+  status      ManualPostStatus @default(DRAFT)
+  scheduledAt DateTime?        @map("scheduled_at")
+  publishedAt DateTime?        @map("published_at")
+  createdById String           @map("created_by_id")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  createdBy   AdminUser        @relation(fields: [createdById], references: [id])
+  telegramPosts TelegramPost[]
+  @@map("manual_posts")
+}
+
+model Match {
+  id              String      @id @default(cuid())
+  providerMatchId String      @unique @map("provider_match_id")
+  homeTeam        String      @map("home_team")
+  awayTeam        String      @map("away_team")
+  kickoffAt       DateTime    @map("kickoff_at")
+  status          MatchStatus @default(SCHEDULED)
+  isBigMatch      Boolean     @default(false) @map("is_big_match")
+  liveMessageId   String?     @map("live_message_id")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+  events          LiveMatchEvent[]
+  telegramPosts   TelegramPost[]
+  @@map("matches")
+}
+
+model LiveMatchEvent {
+  id          String   @id @default(cuid())
+  matchId     String   @map("match_id")
+  providerId  String   @unique @map("provider_id")
+  eventType   String   @map("event_type")
+  minute      Int?
+  team        String?
+  player      String?
+  details     Json?
+  occurredAt  DateTime? @map("occurred_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  match       Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  @@map("live_match_events")
+}
+
+model AdminUser {
+  id         String   @id @default(cuid())
+  telegramId String   @unique @map("telegram_id")
+  username   String?
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  manualPosts ManualPost[]
+  @@map("admin_users")
+}
