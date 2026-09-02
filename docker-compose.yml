@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: football
+      POSTGRES_USER: football
+      # Local-development credential only; change it before any shared deployment.
+      POSTGRES_PASSWORD: football
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U football -d football"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes: [postgres_data:/var/lib/postgresql/data]
+  app:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://football:football@postgres:5432/football?schema=public
+    ports: ["3000:3000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+volumes:
+  postgres_data:
